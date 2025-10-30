@@ -45,7 +45,7 @@ def get_template_path() -> Path:
         if p.exists():
             return p
     # backend/app.py -> repo_root/backend ; go to public/templates/
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parent
     default_path = repo_root / "public" / "templates" / "report_template.pptx"
     return default_path
 
