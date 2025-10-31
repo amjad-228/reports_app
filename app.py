@@ -38,16 +38,29 @@ class ReportPayload(BaseModel):
 
 
 def get_template_path() -> Path:
-    # Allow override via env; default to repo's public/templates/report_template.pptx
+    # Allow override via env; default to locating near current file or project root
     env_path = os.getenv("PPTX_TEMPLATE_PATH")
     if env_path:
         p = Path(env_path)
         if p.exists():
             return p
-    # backend/app.py -> repo_root/backend ; go to public/templates/
-    repo_root = Path(__file__).resolve().parent
-    default_path = repo_root / "public" / "templates" / "report_template.pptx"
-    return default_path
+
+    current_dir = Path(__file__).resolve().parent
+    candidates = [
+        # Typical when backend is deployed as its own project (template inside backend/public/...)
+        current_dir / "public" / "templates" / "report_template.pptx",
+        # Typical when backend is in a subfolder and template is at repo root public/templates
+        current_dir.parent / "public" / "templates" / "report_template.pptx",
+        # Vercel serverless workdir
+        Path("/var/task/public/templates/report_template.pptx"),
+        # Relative to CWD as last resort
+        Path("public/templates/report_template.pptx"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    # Fall back to the most likely relative path; caller will check existence
+    return candidates[0]
 
 
 def replace_placeholders(prs: Presentation, mapping: dict):
@@ -217,20 +230,15 @@ def generate_pdf(payload: ReportPayload):
         except Exception as conv_err:
             raise HTTPException(status_code=500, detail=str(conv_err))
 
-        # Stream PDF
+        # Cleanup temp files
         try:
-            with open(tmp_pdf_path, "rb") as f:
-                pdf_bytes = f.read()
-        finally:
-            # Cleanup temp files
-            try:
-                os.remove(tmp_pptx_path)
-            except Exception:
-                pass
-            try:
-                os.remove(Path(tmp_pptx_path).with_suffix(".pdf"))
-            except Exception:
-                pass
+            os.remove(tmp_pptx_path)
+        except Exception:
+            pass
+        try:
+            os.remove(Path(tmp_pptx_path).with_suffix(".pdf"))
+        except Exception:
+            pass
 
         filename = f"sickLeaves_{payload.NAME_AR}_{payload.ID_NUMBER}.pdf"
         ascii_fallback = "sickLeaves.pdf"
