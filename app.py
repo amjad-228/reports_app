@@ -6,6 +6,7 @@ from typing import Optional
 from io import BytesIO
 from pathlib import Path
 import os
+import re
 
 from pptx import Presentation  # python-pptx
 from urllib.parse import quote
@@ -73,6 +74,20 @@ def get_template_path() -> Path:
         pass
     # Fall back; caller will validate existence
     return candidates[0]
+
+
+def format_date_dd_mm_yyyy(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    s = str(value).strip()
+    # Find first occurrence of YYYY-MM-DD or YYYY/MM/DD anywhere in the string (e.g., ISO timestamps)
+    m = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", s)
+    if not m:
+        return s
+    yyyy, mm, dd = m.groups()
+    mm = mm.zfill(2)
+    dd = dd.zfill(2)
+    return f"{dd}-{mm}-{yyyy}"
 
 
 def load_template_presentation() -> Presentation:
@@ -170,11 +185,11 @@ def generate_pptx(payload: ReportPayload):
             "NAME_AR": payload.NAME_AR,
             "NAME_EN": payload.NAME_EN,
             "DAYS_COUNT": payload.DAYS_COUNT,
-            "ENTRY_DATE_GREGORIAN": payload.ENTRY_DATE_GREGORIAN,
-            "EXIT_DATE_GREGORIAN": payload.EXIT_DATE_GREGORIAN,
+            "ENTRY_DATE_GREGORIAN": format_date_dd_mm_yyyy(payload.ENTRY_DATE_GREGORIAN),
+            "EXIT_DATE_GREGORIAN": format_date_dd_mm_yyyy(payload.EXIT_DATE_GREGORIAN),
             "ENTRY_DATE_HIJRI": payload.ENTRY_DATE_HIJRI,
             "EXIT_DATE_HIJRI": payload.EXIT_DATE_HIJRI,
-            "REPORT_ISSUE_DATE": payload.REPORT_ISSUE_DATE,
+            "REPORT_ISSUE_DATE": format_date_dd_mm_yyyy(payload.REPORT_ISSUE_DATE),
             "NATIONALITY_AR": payload.NATIONALITY_AR,
             "NATIONALITY_EN": payload.NATIONALITY_EN,
             "DOCTOR_NAME_AR": payload.DOCTOR_NAME_AR,
@@ -183,7 +198,7 @@ def generate_pptx(payload: ReportPayload):
             "JOB_TITLE_EN": payload.JOB_TITLE_EN,
             "HOSPITAL_NAME_AR": payload.HOSPITAL_NAME_AR,
             "HOSPITAL_NAME_EN": payload.HOSPITAL_NAME_EN,
-            "PRINT_DATE": payload.PRINT_DATE,
+            "PRINT_DATE": format_date_dd_mm_yyyy(payload.PRINT_DATE),
             "PRINT_TIME": payload.PRINT_TIME,
         }
 
@@ -229,11 +244,11 @@ def generate_pdf(payload: ReportPayload):
             "NAME_AR": payload.NAME_AR,
             "NAME_EN": payload.NAME_EN,
             "DAYS_COUNT": payload.DAYS_COUNT,
-            "ENTRY_DATE_GREGORIAN": payload.ENTRY_DATE_GREGORIAN,
-            "EXIT_DATE_GREGORIAN": payload.EXIT_DATE_GREGORIAN,
+            "ENTRY_DATE_GREGORIAN": format_date_dd_mm_yyyy(payload.ENTRY_DATE_GREGORIAN),
+            "EXIT_DATE_GREGORIAN": format_date_dd_mm_yyyy(payload.EXIT_DATE_GREGORIAN),
             "ENTRY_DATE_HIJRI": payload.ENTRY_DATE_HIJRI,
             "EXIT_DATE_HIJRI": payload.EXIT_DATE_HIJRI,
-            "REPORT_ISSUE_DATE": payload.REPORT_ISSUE_DATE,
+            "REPORT_ISSUE_DATE": format_date_dd_mm_yyyy(payload.REPORT_ISSUE_DATE),
             "NATIONALITY_AR": payload.NATIONALITY_AR,
             "NATIONALITY_EN": payload.NATIONALITY_EN,
             "DOCTOR_NAME_AR": payload.DOCTOR_NAME_AR,
@@ -242,7 +257,7 @@ def generate_pdf(payload: ReportPayload):
             "JOB_TITLE_EN": payload.JOB_TITLE_EN,
             "HOSPITAL_NAME_AR": payload.HOSPITAL_NAME_AR,
             "HOSPITAL_NAME_EN": payload.HOSPITAL_NAME_EN,
-            "PRINT_DATE": payload.PRINT_DATE,
+            "PRINT_DATE": format_date_dd_mm_yyyy(payload.PRINT_DATE),
             "PRINT_TIME": payload.PRINT_TIME,
         }
 
