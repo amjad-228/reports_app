@@ -99,6 +99,17 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/debug-template")
+def debug_template():
+    p = get_template_path()
+    return {
+        "resolved_path": str(p),
+        "exists": p.exists(),
+        "cwd": str(Path.cwd()),
+        "file_dir": str(Path(__file__).resolve().parent),
+    }
+
+
 @app.post("/generate-pptx")
 def generate_pptx(payload: ReportPayload):
     template_path = get_template_path()
@@ -106,6 +117,7 @@ def generate_pptx(payload: ReportPayload):
         raise HTTPException(status_code=500, detail=f"Template not found: {template_path}")
 
     try:
+        print("[generate-pptx] Using template:", template_path)
         prs = Presentation(str(template_path))
 
         # Build mapping from placeholders to values.
