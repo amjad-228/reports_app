@@ -51,10 +51,15 @@ def get_template_path() -> Path:
         current_dir / "public" / "templates" / "report_template.pptx",
         # Typical when backend is in a subfolder and template is at repo root public/templates
         current_dir.parent / "public" / "templates" / "report_template.pptx",
+        # When includeFiles uses repo-root paths like backend/public/**
+        current_dir / ".." / "public" / "templates" / "report_template.pptx",
+        Path("backend/public/templates/report_template.pptx").resolve(),
         # Vercel serverless workdir
         Path("/var/task/public/templates/report_template.pptx"),
+        Path("/var/task/backend/public/templates/report_template.pptx"),
         # Relative to CWD as last resort
         Path("public/templates/report_template.pptx"),
+        Path("backend/public/templates/report_template.pptx"),
     ]
     for candidate in candidates:
         if candidate.exists():
