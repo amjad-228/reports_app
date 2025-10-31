@@ -2,7 +2,10 @@
   "version": 2,
   "functions": {
     "api/app.py": {
-      "includeFiles": "backend/public/**"
+      "includeFiles": [
+        "backend/public/templates/report_template.pptx",
+        "public/templates/report_template.pptx"
+      ]
     }
   },
   "routes": [

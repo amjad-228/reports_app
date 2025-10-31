@@ -64,7 +64,13 @@ def get_template_path() -> Path:
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    # Fall back to the most likely relative path; caller will check existence
+    # As a last resort, search for the file anywhere under working dir
+    try:
+        for match in Path.cwd().rglob("report_template.pptx"):
+            return match
+    except Exception:
+        pass
+    # Fall back; caller will validate existence
     return candidates[0]
 
 
@@ -107,11 +113,24 @@ def health():
 @app.get("/debug-template")
 def debug_template():
     p = get_template_path()
+    candidates = []
+    try:
+        roots = [Path("/var/task"), Path.cwd()]
+        found = []
+        for root in roots:
+            try:
+                for match in root.rglob("report_template.pptx"):
+                    found.append(str(match))
+            except Exception:
+                continue
+    except Exception:
+        found = []
     return {
         "resolved_path": str(p),
         "exists": p.exists(),
         "cwd": str(Path.cwd()),
         "file_dir": str(Path(__file__).resolve().parent),
+        "found_candidates": found,
     }
 
 
