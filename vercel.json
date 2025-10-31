@@ -2,8 +2,7 @@
   "version": 2,
   "functions": {
     "app.py": {
-      "includeFiles": "public/**",
-      "runtime": "python3.11"
+      "includeFiles": "public/**"
     }
   },
   "routes": [
