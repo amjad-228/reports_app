@@ -1,14 +1,14 @@
 {
   "version": 2,
   "functions": {
-    "app.py": {
+    "api/app.py": {
       "includeFiles": "public/**"
     }
   },
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "app.py"
+      "dest": "api/app.py"
     }
   ]
 }
