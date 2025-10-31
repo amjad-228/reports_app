@@ -47,6 +47,9 @@ def get_template_path() -> Path:
 
     current_dir = Path(__file__).resolve().parent
     candidates = [
+        # Vercel serverless common locations first
+        Path("/var/task/backend/public/templates/report_template.pptx"),
+        Path("/var/task/public/templates/report_template.pptx"),
         # Typical when backend is deployed as its own project (template inside backend/public/...)
         current_dir / "public" / "templates" / "report_template.pptx",
         # Typical when backend is in a subfolder and template is at repo root public/templates
@@ -54,9 +57,6 @@ def get_template_path() -> Path:
         # When includeFiles uses repo-root paths like backend/public/**
         current_dir / ".." / "public" / "templates" / "report_template.pptx",
         Path("backend/public/templates/report_template.pptx").resolve(),
-        # Vercel serverless workdir
-        Path("/var/task/public/templates/report_template.pptx"),
-        Path("/var/task/backend/public/templates/report_template.pptx"),
         # Relative to CWD as last resort
         Path("public/templates/report_template.pptx"),
         Path("backend/public/templates/report_template.pptx"),
@@ -125,12 +125,17 @@ def debug_template():
                 continue
     except Exception:
         found = []
+    checks = {
+        "/var/task/backend/public/templates": (Path("/var/task/backend/public/templates").exists()),
+        "/var/task/public/templates": (Path("/var/task/public/templates").exists()),
+    }
     return {
         "resolved_path": str(p),
         "exists": p.exists(),
         "cwd": str(Path.cwd()),
         "file_dir": str(Path(__file__).resolve().parent),
         "found_candidates": found,
+        "dir_checks": checks,
     }
 
 
