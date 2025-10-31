@@ -12,6 +12,7 @@ from urllib.parse import quote
 from tempfile import NamedTemporaryFile
 import subprocess
 import shutil
+import requests
 
 
 class ReportPayload(BaseModel):
@@ -74,6 +75,22 @@ def get_template_path() -> Path:
     return candidates[0]
 
 
+def load_template_presentation() -> Presentation:
+    """Load template as Presentation either from filesystem or via URL fallback."""
+    path = get_template_path()
+    if path.exists():
+        return Presentation(str(path))
+
+    template_url = os.getenv("PPTX_TEMPLATE_URL")
+    if template_url:
+        resp = requests.get(template_url, timeout=20)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch template from URL: {resp.status_code}")
+        return Presentation(BytesIO(resp.content))
+
+    raise HTTPException(status_code=500, detail=f"Template not found locally ({path}) and PPTX_TEMPLATE_URL not set")
+
+
 def replace_placeholders(prs: Presentation, mapping: dict):
     # Replace text placeholders in all shapes across all slides
     # Do replacements per-run to preserve formatting (font color/size)
@@ -129,6 +146,7 @@ def debug_template():
         "/var/task/backend/public/templates": (Path("/var/task/backend/public/templates").exists()),
         "/var/task/public/templates": (Path("/var/task/public/templates").exists()),
     }
+    template_url = os.getenv("PPTX_TEMPLATE_URL")
     return {
         "resolved_path": str(p),
         "exists": p.exists(),
@@ -136,18 +154,14 @@ def debug_template():
         "file_dir": str(Path(__file__).resolve().parent),
         "found_candidates": found,
         "dir_checks": checks,
+        "template_url": template_url or None,
     }
 
 
 @app.post("/generate-pptx")
 def generate_pptx(payload: ReportPayload):
-    template_path = get_template_path()
-    if not template_path.exists():
-        raise HTTPException(status_code=500, detail=f"Template not found: {template_path}")
-
     try:
-        print("[generate-pptx] Using template:", template_path)
-        prs = Presentation(str(template_path))
+        prs = load_template_presentation()
 
         # Build mapping from placeholders to values.
         mapping = {
