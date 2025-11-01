@@ -1,7 +1,7 @@
 {
   "version": 2,
   "functions": {
-    "api/app.py": {
+    "app.py": {
       "includeFiles": "**/public/templates/report_template.pptx"
     }
   },
