@@ -1,14 +1,14 @@
 {
   "version": 2,
   "functions": {
-    "app.py": {
+    "/app.py": {
       "includeFiles": "**/public/templates/report_template.pptx"
     }
   },
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "app.py"
+      "dest": "/app.py"
     }
   ]
 }
