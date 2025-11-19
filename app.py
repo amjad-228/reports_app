@@ -138,7 +138,12 @@ app.add_middleware(
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    template_url = os.getenv("PPTX_TEMPLATE_URL")
+    return {
+        "status": "ok",
+        "template_url_configured": bool(template_url),
+        "template_url": template_url if template_url else "Not configured"
+    }
 
 
 @app.get("/debug-template")
