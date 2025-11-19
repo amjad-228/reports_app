@@ -43,13 +43,24 @@ def format_date_dd_mm_yyyy(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
     s = str(value).strip()
+    # Find first occurrence of YYYY-MM-DD or YYYY/MM/DD or DD/MM/YYYY anywhere in the string
     m = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", s)
-    if not m:
-        return s
-    yyyy, mm, dd = m.groups()
-    mm = mm.zfill(2)
-    dd = dd.zfill(2)
-    return f"{dd}-{mm}-{yyyy}"
+    if m:
+        # Format: YYYY-MM-DD or YYYY/MM/DD
+        yyyy, mm, dd = m.groups()
+        mm = mm.zfill(2)
+        dd = dd.zfill(2)
+        return f"{dd}-{mm}-{yyyy}"
+    
+    # Try DD/MM/YYYY or DD-MM-YYYY format
+    m = re.search(r"(\d{1,2})[-/](\d{1,2})[-/](\d{4})", s)
+    if m:
+        dd, mm, yyyy = m.groups()
+        mm = mm.zfill(2)
+        dd = dd.zfill(2)
+        return f"{dd}-{mm}-{yyyy}"
+    
+    return s
 
 
 def load_template_presentation() -> Presentation:
