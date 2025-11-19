@@ -91,19 +91,18 @@ def format_date_dd_mm_yyyy(value: Optional[str]) -> Optional[str]:
 
 
 def load_template_presentation() -> Presentation:
-    """Load template as Presentation either from filesystem or via URL fallback."""
-    path = get_template_path()
-    if path.exists():
-        return Presentation(str(path))
-
+    """Load template as Presentation from URL specified in environment variable."""
     template_url = os.getenv("PPTX_TEMPLATE_URL")
-    if template_url:
+    if not template_url:
+        raise HTTPException(status_code=500, detail="PPTX_TEMPLATE_URL environment variable is not set")
+    
+    try:
         resp = requests.get(template_url, timeout=20)
         if resp.status_code != 200:
             raise HTTPException(status_code=500, detail=f"Failed to fetch template from URL: {resp.status_code}")
         return Presentation(BytesIO(resp.content))
-
-    raise HTTPException(status_code=500, detail=f"Template not found locally ({path}) and PPTX_TEMPLATE_URL not set")
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching template: {str(e)}")
 
 
 def replace_placeholders(prs: Presentation, mapping: dict):
@@ -231,12 +230,8 @@ def generate_pptx(payload: ReportPayload):
 
 @app.post("/generate-pdf")
 def generate_pdf(payload: ReportPayload):
-    template_path = get_template_path()
-    if not template_path.exists():
-        raise HTTPException(status_code=500, detail=f"Template not found: {template_path}")
-
     try:
-        prs = Presentation(str(template_path))
+        prs = load_template_presentation()
 
         mapping = {
             "SERVICE_CODE": payload.SERVICE_CODE,

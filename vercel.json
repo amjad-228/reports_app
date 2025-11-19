@@ -3,10 +3,7 @@
   "builds": [
     {
       "src": "api/app.py",
-      "use": "@vercel/python",
-      "config": {
-        "includeFiles": "**/public/templates/report_template.pptx"
-      }
+      "use": "@vercel/python"
     }
   ],
   "routes": [
