@@ -7,12 +7,13 @@ from io import BytesIO
 from pathlib import Path
 import os
 import re
+from dotenv import load_dotenv
+
+# Load environment variables from .env.local
+load_dotenv(dotenv_path=".env.local")
 
 from pptx import Presentation  # python-pptx
 from urllib.parse import quote
-from tempfile import NamedTemporaryFile
-import subprocess
-import shutil
 import requests
 
 
@@ -91,10 +92,22 @@ def format_date_dd_mm_yyyy(value: Optional[str]) -> Optional[str]:
 
 
 def load_template_presentation() -> Presentation:
-    """Load template as Presentation from URL specified in environment variable."""
+    """Load template as Presentation from local file or URL."""
+    # Priority 1: Local file
+    local_path = get_template_path()
+    if local_path and local_path.exists():
+        try:
+            return Presentation(str(local_path))
+        except Exception as e:
+            print(f"Error loading local template {local_path}: {e}")
+
+    # Priority 2: External URL fallback
     template_url = os.getenv("PPTX_TEMPLATE_URL")
     if not template_url:
-        raise HTTPException(status_code=500, detail="PPTX_TEMPLATE_URL environment variable is not set")
+        raise HTTPException(
+            status_code=500, 
+            detail="Local template not found and PPTX_TEMPLATE_URL is not set"
+        )
     
     try:
         resp = requests.get(template_url, timeout=20)
@@ -102,7 +115,7 @@ def load_template_presentation() -> Presentation:
             raise HTTPException(status_code=500, detail=f"Failed to fetch template from URL: {resp.status_code}")
         return Presentation(BytesIO(resp.content))
     except requests.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching template: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching template from URL: {str(e)}")
 
 
 def replace_placeholders(prs: Presentation, mapping: dict):
@@ -233,6 +246,9 @@ def generate_pptx(payload: ReportPayload):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+SLIDIZE_CONVERT_URL = "https://api.slidize.cloud/v1.0/slides/convert/pdf"
+
+
 @app.post("/generate-pdf")
 def generate_pdf(payload: ReportPayload):
     try:
@@ -263,52 +279,25 @@ def generate_pdf(payload: ReportPayload):
 
         replace_placeholders(prs, mapping)
 
-        # Save to temp PPTX then convert to PDF
-        with NamedTemporaryFile(suffix=".pptx", delete=False) as tmp_pptx:
-            prs.save(tmp_pptx.name)
-            tmp_pptx_path = tmp_pptx.name
+        # Save filled PPTX to in-memory buffer
+        pptx_buf = BytesIO()
+        prs.save(pptx_buf)
+        pptx_buf.seek(0)
 
-        # Convert PPTX -> PDF using LibreOffice (headless soffice)
-        # We avoid requiring Microsoft PowerPoint.
+        # Convert PPTX -> PDF using Slidize Cloud API (free, no auth required)
         try:
-            tmp_dir = Path(tmp_pptx_path).parent
-            soffice_path = os.getenv("LIBREOFFICE_PATH") or shutil.which("soffice") or shutil.which("soffice.exe")
-            if not soffice_path:
-                raise RuntimeError("LibreOffice 'soffice' not found in PATH. Set LIBREOFFICE_PATH or install LibreOffice.")
-
-            # Use --outdir to place the PDF next to the PPTX
-            cmd = [
-                soffice_path,
-                "--headless",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                str(tmp_dir),
-                str(tmp_pptx_path),
-            ]
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if result.returncode != 0:
-                raise RuntimeError(f"LibreOffice conversion failed: {result.stderr or result.stdout}")
-
-            # Determine output path (LibreOffice names it with .pdf in same base name)
-            produced_pdf = Path(tmp_pptx_path).with_suffix(".pdf")
-            if not produced_pdf.exists():
-                raise RuntimeError("Converted PDF not found after LibreOffice run.")
-
-            with open(produced_pdf, "rb") as f:
-                pdf_bytes = f.read()
-        except Exception as conv_err:
-            raise HTTPException(status_code=500, detail=str(conv_err))
-
-        # Cleanup temp files
-        try:
-            os.remove(tmp_pptx_path)
-        except Exception:
-            pass
-        try:
-            os.remove(Path(tmp_pptx_path).with_suffix(".pdf"))
-        except Exception:
-            pass
+            slidize_resp = requests.post(
+                SLIDIZE_CONVERT_URL,
+                files={"documents": ("report.pptx", pptx_buf, "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+                timeout=120,
+            )
+            if slidize_resp.status_code != 200:
+                raise RuntimeError(
+                    f"Slidize Cloud API returned status {slidize_resp.status_code}: {slidize_resp.text[:500]}"
+                )
+            pdf_bytes = slidize_resp.content
+        except requests.RequestException as e:
+            raise HTTPException(status_code=500, detail=f"Error calling Slidize Cloud API: {str(e)}")
 
         filename = f"sickLeaves_{payload.NAME_AR}_{payload.ID_NUMBER}.pdf"
         ascii_fallback = "sickLeaves.pdf"
