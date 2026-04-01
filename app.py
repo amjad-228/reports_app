@@ -225,7 +225,7 @@ def generate_pptx(payload: ReportPayload):
         prs.save(buf)
         buf.seek(0)
 
-        filename = f"sickLeaves_{payload.NAME_AR}_{payload.ID_NUMBER}.pptx"
+        filename = "sickLeaves.pptx"
         # HTTP headers must be latin-1 encodable in Starlette; use RFC5987 filename*
         ascii_fallback = "sickLeaves.pptx"
         content_disposition = (
@@ -299,7 +299,7 @@ def generate_pdf(payload: ReportPayload):
         except requests.RequestException as e:
             raise HTTPException(status_code=500, detail=f"Error calling Slidize Cloud API: {str(e)}")
 
-        filename = f"sickLeaves_{payload.NAME_AR}_{payload.ID_NUMBER}.pdf"
+        filename = "sickLeaves.pdf"
         ascii_fallback = "sickLeaves.pdf"
         cd = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
         return StreamingResponse(
