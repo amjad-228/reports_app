@@ -61,7 +61,9 @@ def get_template_path() -> Path:
         # Relative to current script
         current_dir / "public" / "templates" / template_name,
         current_dir.parent / "public" / "templates" / template_name,
-        current_dir.parent.parent / "public" / "templates" / template_name,
+        # Common Vercel folder structure
+        Path("/var/task/api/public/templates") / template_name,
+        Path("/var/task/backend/api/public/templates") / template_name,
     ]
     
     for candidate in candidates:
