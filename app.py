@@ -41,39 +41,40 @@ class ReportPayload(BaseModel):
 
 
 def get_template_path() -> Path:
-    # Allow override via env; default to locating near current file or project root
+    # Allow override via env for both path and name
     env_path = os.getenv("PPTX_TEMPLATE_PATH")
     if env_path:
         p = Path(env_path)
         if p.exists():
             return p
 
+    template_name = os.getenv("PPTX_TEMPLATE_NAME", "report_template.pptx")
     current_dir = Path(__file__).resolve().parent
+    
+    # Priority candidates based on your project structure
     candidates = [
-        # Vercel serverless common locations first
-        Path("/var/task/backend/public/templates/report_template.pptx"),
-        Path("/var/task/public/templates/report_template.pptx"),
-        # Typical when backend is deployed as its own project (template inside backend/public/...)
-        current_dir / "public" / "templates" / "report_template.pptx",
-        # Typical when backend is in a subfolder and template is at repo root public/templates
-        current_dir.parent / "public" / "templates" / "report_template.pptx",
-        # When includeFiles uses repo-root paths like backend/public/**
-        current_dir / ".." / "public" / "templates" / "report_template.pptx",
-        Path("backend/public/templates/report_template.pptx").resolve(),
-        # Relative to CWD as last resort
-        Path("public/templates/report_template.pptx"),
-        Path("backend/public/templates/report_template.pptx"),
+        # Local development (CWD is backend/)
+        Path("public/templates") / template_name,
+        # Vercel deployment paths
+        Path("/var/task/backend/public/templates") / template_name,
+        Path("/var/task/public/templates") / template_name,
+        # Relative to current script
+        current_dir / "public" / "templates" / template_name,
+        current_dir.parent / "public" / "templates" / template_name,
+        current_dir.parent.parent / "public" / "templates" / template_name,
     ]
+    
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    # As a last resort, search for the file anywhere under working dir
+            
+    # Search recursively as a fallback
     try:
-        for match in Path.cwd().rglob("report_template.pptx"):
+        for match in Path.cwd().rglob(template_name):
             return match
     except Exception:
         pass
-    # Fall back; caller will validate existence
+        
     return candidates[0]
 
 
