@@ -7,12 +7,13 @@ from io import BytesIO
 from pathlib import Path
 import os
 import re
+from dotenv import load_dotenv
+
+# Load environment variables from .env.local
+load_dotenv(dotenv_path=".env.local")
 
 from pptx import Presentation  # python-pptx
 from urllib.parse import quote
-from tempfile import NamedTemporaryFile
-import subprocess
-import shutil
 import requests
 
 
@@ -39,35 +40,74 @@ class ReportPayload(BaseModel):
     PRINT_TIME: str
 
 
+def get_template_path() -> Path:
+    # Allow override via env; default to locating near current file or project root
+    env_path = os.getenv("PPTX_TEMPLATE_PATH")
+    if env_path:
+        p = Path(env_path)
+        if p.exists():
+            return p
+
+    current_dir = Path(__file__).resolve().parent
+    candidates = [
+        # Vercel serverless common locations first
+        Path("/var/task/backend/public/templates/report_template.pptx"),
+        Path("/var/task/public/templates/report_template.pptx"),
+        # Typical when backend is deployed as its own project (template inside backend/public/...)
+        current_dir / "public" / "templates" / "report_template.pptx",
+        # Typical when backend is in a subfolder and template is at repo root public/templates
+        current_dir.parent / ".." / "public" / "templates" / "report_template.pptx",
+        # When includeFiles uses repo-root paths like backend/public/**
+        current_dir / ".." / "public" / "templates" / "report_template.pptx",
+        Path("backend/public/templates/report_template.pptx").resolve(),
+        # Relative to CWD as last resort
+        Path("public/templates/report_template.pptx"),
+        Path("backend/public/templates/report_template.pptx"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    # As a last resort, search for the file anywhere under working dir
+    try:
+        for match in Path.cwd().rglob("report_template.pptx"):
+            return match
+    except Exception:
+        pass
+    # Fall back; caller will validate existence
+    return candidates[0]
+
+
 def format_date_dd_mm_yyyy(value: Optional[str]) -> Optional[str]:
     if value is None:
         return None
     s = str(value).strip()
-    # Find first occurrence of YYYY-MM-DD or YYYY/MM/DD or DD/MM/YYYY anywhere in the string
+    # Find first occurrence of YYYY-MM-DD or YYYY/MM/DD anywhere in the string (e.g., ISO timestamps)
     m = re.search(r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})", s)
-    if m:
-        # Format: YYYY-MM-DD or YYYY/MM/DD
-        yyyy, mm, dd = m.groups()
-        mm = mm.zfill(2)
-        dd = dd.zfill(2)
-        return f"{dd}-{mm}-{yyyy}"
-    
-    # Try DD/MM/YYYY or DD-MM-YYYY format
-    m = re.search(r"(\d{1,2})[-/](\d{1,2})[-/](\d{4})", s)
-    if m:
-        dd, mm, yyyy = m.groups()
-        mm = mm.zfill(2)
-        dd = dd.zfill(2)
-        return f"{dd}-{mm}-{yyyy}"
-    
-    return s
+    if not m:
+        return s
+    yyyy, mm, dd = m.groups()
+    mm = mm.zfill(2)
+    dd = dd.zfill(2)
+    return f"{dd}-{mm}-{yyyy}"
 
 
 def load_template_presentation() -> Presentation:
-    """Load template as Presentation from URL specified in environment variable."""
+    """Load template as Presentation from local file or URL."""
+    # Priority 1: Local file
+    local_path = get_template_path()
+    if local_path and local_path.exists():
+        try:
+            return Presentation(str(local_path))
+        except Exception as e:
+            print(f"Error loading local template {local_path}: {e}")
+
+    # Priority 2: External URL fallback
     template_url = os.getenv("PPTX_TEMPLATE_URL")
     if not template_url:
-        raise HTTPException(status_code=500, detail="PPTX_TEMPLATE_URL environment variable is not set")
+        raise HTTPException(
+            status_code=500, 
+            detail="Local template not found and PPTX_TEMPLATE_URL is not set"
+        )
     
     try:
         resp = requests.get(template_url, timeout=20)
@@ -75,10 +115,12 @@ def load_template_presentation() -> Presentation:
             raise HTTPException(status_code=500, detail=f"Failed to fetch template from URL: {resp.status_code}")
         return Presentation(BytesIO(resp.content))
     except requests.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching template: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching template from URL: {str(e)}")
 
 
 def replace_placeholders(prs: Presentation, mapping: dict):
+    # Replace text placeholders in all shapes across all slides
+    # Do replacements per-run to preserve formatting (font color/size)
     for slide in prs.slides:
         for shape in slide.shapes:
             try:
@@ -90,8 +132,9 @@ def replace_placeholders(prs: Presentation, mapping: dict):
                             for key, value in mapping.items():
                                 new_text = new_text.replace(f"{{{{{key}}}}}", str(value) if value is not None else "")
                             if new_text != text:
-                                run.text = new_text
+                                run.text = new_text  # preserves run formatting
             except Exception:
+                # Skip shapes that fail to process to avoid taking down the request
                 continue
 
 
@@ -99,7 +142,7 @@ app = FastAPI(title="PPTX Generator Service")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # adjust in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -117,11 +160,43 @@ def health():
     }
 
 
+@app.get("/debug-template")
+def debug_template():
+    p = get_template_path()
+    candidates = []
+    try:
+        roots = [Path("/var/task"), Path.cwd()]
+        found = []
+        for root in roots:
+            try:
+                for match in root.rglob("report_template.pptx"):
+                    found.append(str(match))
+            except Exception:
+                continue
+    except Exception:
+        found = []
+    checks = {
+        "/var/task/backend/public/templates": (Path("/var/task/backend/public/templates").exists()),
+        "/var/task/public/templates": (Path("/var/task/public/templates").exists()),
+    }
+    template_url = os.getenv("PPTX_TEMPLATE_URL")
+    return {
+        "resolved_path": str(p),
+        "exists": p.exists(),
+        "cwd": str(Path.cwd()),
+        "file_dir": str(Path(__file__).resolve().parent),
+        "found_candidates": found,
+        "dir_checks": checks,
+        "template_url": template_url or None,
+    }
+
+
 @app.post("/generate-pptx")
 def generate_pptx(payload: ReportPayload):
     try:
         prs = load_template_presentation()
 
+        # Build mapping from placeholders to values.
         mapping = {
             "SERVICE_CODE": payload.SERVICE_CODE,
             "ID_NUMBER": payload.ID_NUMBER,
@@ -151,7 +226,8 @@ def generate_pptx(payload: ReportPayload):
         prs.save(buf)
         buf.seek(0)
 
-        filename = f"sickLeaves_{payload.NAME_AR}_{payload.ID_NUMBER}.pptx"
+        filename = "sickLeaves.pptx"
+        # HTTP headers must be latin-1 encodable in Starlette; use RFC5987 filename*
         ascii_fallback = "sickLeaves.pptx"
         content_disposition = (
             f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
@@ -164,10 +240,14 @@ def generate_pptx(payload: ReportPayload):
             },
         )
     except Exception as e:
+        # Log server-side for debugging
         import traceback
         print("[generate-pptx] Error:", e)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+SLIDIZE_CONVERT_URL = "https://api.slidize.cloud/v1.0/slides/convert/pdf"
 
 
 @app.post("/generate-pdf")
@@ -200,48 +280,27 @@ def generate_pdf(payload: ReportPayload):
 
         replace_placeholders(prs, mapping)
 
-        with NamedTemporaryFile(suffix=".pptx", delete=False) as tmp_pptx:
-            prs.save(tmp_pptx.name)
-            tmp_pptx_path = tmp_pptx.name
+        # Save filled PPTX to in-memory buffer
+        pptx_buf = BytesIO()
+        prs.save(pptx_buf)
+        pptx_buf.seek(0)
 
+        # Convert PPTX -> PDF using Slidize Cloud API (free, no auth required)
         try:
-            tmp_dir = Path(tmp_pptx_path).parent
-            soffice_path = os.getenv("LIBREOFFICE_PATH") or shutil.which("soffice") or shutil.which("soffice.exe")
-            if not soffice_path:
-                raise RuntimeError("LibreOffice 'soffice' not found in PATH. Set LIBREOFFICE_PATH or install LibreOffice.")
+            slidize_resp = requests.post(
+                SLIDIZE_CONVERT_URL,
+                files={"documents": ("report.pptx", pptx_buf, "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+                timeout=120,
+            )
+            if slidize_resp.status_code != 200:
+                raise RuntimeError(
+                    f"Slidize Cloud API returned status {slidize_resp.status_code}: {slidize_resp.text[:500]}"
+                )
+            pdf_bytes = slidize_resp.content
+        except requests.RequestException as e:
+            raise HTTPException(status_code=500, detail=f"Error calling Slidize Cloud API: {str(e)}")
 
-            cmd = [
-                soffice_path,
-                "--headless",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                str(tmp_dir),
-                str(tmp_pptx_path),
-            ]
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if result.returncode != 0:
-                raise RuntimeError(f"LibreOffice conversion failed: {result.stderr or result.stdout}")
-
-            produced_pdf = Path(tmp_pptx_path).with_suffix(".pdf")
-            if not produced_pdf.exists():
-                raise RuntimeError("Converted PDF not found after LibreOffice run.")
-
-            with open(produced_pdf, "rb") as f:
-                pdf_bytes = f.read()
-        except Exception as conv_err:
-            raise HTTPException(status_code=500, detail=str(conv_err))
-
-        try:
-            os.remove(tmp_pptx_path)
-        except Exception:
-            pass
-        try:
-            os.remove(Path(tmp_pptx_path).with_suffix(".pdf"))
-        except Exception:
-            pass
-
-        filename = f"sickLeaves_{payload.NAME_AR}_{payload.ID_NUMBER}.pdf"
+        filename = "sickLeaves.pdf"
         ascii_fallback = "sickLeaves.pdf"
         cd = f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{quote(filename)}"
         return StreamingResponse(
